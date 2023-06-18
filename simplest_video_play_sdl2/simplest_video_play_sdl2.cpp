@@ -12,18 +12,18 @@
  * API（Direct3D，OpenGL）的封装，使用起来明显简单于直接调用底层
  * API。
  *
- * 函数调用步骤如下: 
+ * 函数调用步骤如下：
  *
  * [初始化]
- * SDL_Init(): 初始化SDL。
- * SDL_CreateWindow(): 创建窗口（Window）。
- * SDL_CreateRenderer(): 基于窗口创建渲染器（Render）。
- * SDL_CreateTexture(): 创建纹理（Texture）。
+ * SDL_Init()：初始化SDL。
+ * SDL_CreateWindow()：创建窗口（Window）。
+ * SDL_CreateRenderer()：基于窗口创建渲染器（Render）。
+ * SDL_CreateTexture()：创建纹理（Texture）。
  *
  * [循环渲染数据]
- * SDL_UpdateTexture(): 设置纹理的数据。
- * SDL_RenderCopy(): 纹理复制给渲染器。
- * SDL_RenderPresent(): 显示。
+ * SDL_UpdateTexture()：设置纹理的数据。
+ * SDL_RenderCopy()：纹理复制给渲染器。
+ * SDL_RenderPresent()：显示。
  *
  * This software plays RGB/YUV raw video data using SDL2.
  * SDL is a wrapper of low-level API (Direct3D, OpenGL).
@@ -48,13 +48,17 @@
 extern "C"
 {
 #include "sdl/SDL.h"
+#include <wchar.h>
+
 };
 
 //set '1' to choose a type of file to play
-#define LOAD_BGRA    1
+#define LOAD_BGRA    0
 #define LOAD_RGB24   0
 #define LOAD_BGR24   0
-#define LOAD_YUV420P 0
+#define LOAD_YUV420P 1
+
+#define HAS_BORDER	 1
 
 //Bit per Pixel
 #if LOAD_BGRA
@@ -65,7 +69,7 @@ const int bpp=24;
 const int bpp=12;
 #endif
 
-int screen_w=500,screen_h=500;
+const int screen_w=500,screen_h=500;
 const int pixel_w=320,pixel_h=180;
 
 unsigned char buffer[pixel_w*pixel_h*bpp/8];
@@ -98,29 +102,22 @@ void CONVERT_24to32(unsigned char *image_in,unsigned char *image_out,int w,int h
 
 //Refresh Event
 #define REFRESH_EVENT  (SDL_USEREVENT + 1)
-//Break
-#define BREAK_EVENT  (SDL_USEREVENT + 2)
 
 int thread_exit=0;
 
 int refresh_video(void *opaque){
-	thread_exit=0;
-	while (!thread_exit) {
+	while (thread_exit==0) {
 		SDL_Event event;
 		event.type = REFRESH_EVENT;
 		SDL_PushEvent(&event);
 		SDL_Delay(40);
 	}
-	thread_exit=0;
-	//Break
-	SDL_Event event;
-	event.type = BREAK_EVENT;
-	SDL_PushEvent(&event);
 	return 0;
 }
 
 int main(int argc, char* argv[])
 {
+	// SDL_Init 初始化SDL
 	if(SDL_Init(SDL_INIT_VIDEO)) {  
 		printf( "Could not initialize SDL - %s\n", SDL_GetError()); 
 		return -1;
@@ -128,12 +125,14 @@ int main(int argc, char* argv[])
 
 	SDL_Window *screen; 
 	//SDL 2.0 Support for multiple windows
+	// SDL_CreateWindow 创建窗口
 	screen = SDL_CreateWindow("Simplest Video Play SDL2", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		screen_w, screen_h,SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
+		screen_w, screen_h,SDL_WINDOW_OPENGL);
 	if(!screen) {  
 		printf("SDL: could not create window - exiting:%s\n",SDL_GetError());  
 		return -1;
 	}
+	// SDL_CreateRenderer 基于窗口创建渲染器
 	SDL_Renderer* sdlRenderer = SDL_CreateRenderer(screen, -1, 0);  
 
 	Uint32 pixformat=0;
@@ -149,8 +148,19 @@ int main(int argc, char* argv[])
 	//YV12: Y + V + U  (3 planes)
 	pixformat= SDL_PIXELFORMAT_IYUV;  
 #endif
-
+	// 创建纹理
 	SDL_Texture* sdlTexture = SDL_CreateTexture(sdlRenderer,pixformat, SDL_TEXTUREACCESS_STREAMING,pixel_w,pixel_h);
+
+	int border=0;
+	//Make picture smaller, Add a "border"
+#if HAS_BORDER
+	border=200;
+#endif
+	SDL_Rect sdlRect;  
+	sdlRect.x = 0+border;  
+	sdlRect.y = 0+border;  
+	sdlRect.w = screen_w-border*2;  
+	sdlRect.h = screen_h-border*2 + 200;  
 
 	FILE *fp=NULL;
 #if LOAD_BGRA
@@ -167,16 +177,19 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	SDL_Rect sdlRect;  
-
 	SDL_Thread *refresh_thread = SDL_CreateThread(refresh_video,NULL,NULL);
 	SDL_Event event;
 	while(1){
 		//Wait
 		SDL_WaitEvent(&event);
 		if(event.type==REFRESH_EVENT){
+			// fread 从给定流 stream 读取数据到 ptr 所指向的数组中
+			// 参数1 读取的数据存放的内存的指针，参数2 每次读取的字节数，参数3 读取次数，参数4 要读取的文件的指针
 			if (fread(buffer, 1, pixel_w*pixel_h*bpp/8, fp) != pixel_w*pixel_h*bpp/8){
 				// Loop
+				// fread 设置流 stream 的文件位置为给定的偏移 offset，参数 offset 意味着从给定的 whence 位置查找的字节数
+				// 参数1 指向 FILE 对象的指针，参数2 相对 whence 的偏移量，以字节为单位，参数3 表示开始添加偏移 offset 的位置
+				// SEEK_SET 文件的开头，SEEK_CUR 文件指针的当前位置，SEEK_END 文件的末尾
 				fseek(fp, 0, SEEK_SET);
 				fread(buffer, 1, pixel_w*pixel_h*bpp/8, fp);
 			}
@@ -191,28 +204,22 @@ int main(int argc, char* argv[])
 			CONVERT_24to32(buffer,buffer_convert,pixel_w,pixel_h);
 			SDL_UpdateTexture( sdlTexture, NULL, buffer_convert, pixel_w*4);  
 #elif LOAD_YUV420P
+			// SDL_UpdateTexture 设置纹理的数据
 			SDL_UpdateTexture( sdlTexture, NULL, buffer, pixel_w);  
 #endif
-			//FIX: If window is resize
-			sdlRect.x = 0;  
-			sdlRect.y = 0;  
-			sdlRect.w = screen_w;  
-			sdlRect.h = screen_h;  
-			
-			SDL_RenderClear( sdlRenderer );   
+			// 
+			SDL_RenderClear( sdlRenderer );  
+			// SDL_RenderCopy 纹理复制给渲染器
 			SDL_RenderCopy( sdlRenderer, sdlTexture, NULL, &sdlRect);  
+			// SDL_RenderPresent 显示
 			SDL_RenderPresent( sdlRenderer );  
+			//Delay 40ms
+			SDL_Delay(40);
 			
-		}else if(event.type==SDL_WINDOWEVENT){
-			//If Resize
-			SDL_GetWindowSize(screen,&screen_w,&screen_h);
 		}else if(event.type==SDL_QUIT){
-			thread_exit=1;
-		}else if(event.type==BREAK_EVENT){
 			break;
 		}
 	}
-	SDL_Quit();
-	
+
 	return 0;
 }
