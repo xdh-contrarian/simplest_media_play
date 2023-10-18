@@ -67,6 +67,7 @@
 #include <stdio.h>
 #include <tchar.h>
 #include <d3d9.h>
+#pragma comment(lib, "D3d9.lib")
 
 //Flexible Vertex Format, FVF
 typedef struct
@@ -92,12 +93,12 @@ IDirect3DVertexBuffer9 *m_pDirect3DVertexBuffer= NULL;
 //Select one of the Texture mode (Set '1'):
 #define TEXTURE_DEFAULT 0
 //Rotate the texture
-#define TEXTURE_ROTATE  1
+#define TEXTURE_ROTATE  0
 //Show half of the Texture
 #define TEXTURE_HALF    0
 
 //Width, Height
-const int screen_w=500,screen_h=500;
+const int screen_w= 320,screen_h= 180;
 const int pixel_w=320,pixel_h=180;
 FILE *fp=NULL;
 //Bit per Pixel
@@ -253,6 +254,7 @@ int InitD3D( HWND hwnd, unsigned long lWidth, unsigned long lHeight )
 		return -1;
 	}
 
+	// 顶点坐标，雷神代码坐标原点是屏幕坐标原点，也就是屏幕左上角 add by dhx at 2023/10/18
 #if TEXTURE_HALF
 	CUSTOMVERTEX vertices[] ={
 		{0.0f,		0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,0.0f},
@@ -260,6 +262,8 @@ int InitD3D( HWND hwnd, unsigned long lWidth, unsigned long lHeight )
 		{lWidth,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.5f,1.0f},
 		{0.0f,		lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,1.0f}
 	};
+
+	// 雷神写的基于顶点坐标进行旋转。
 #elif TEXTURE_ROTATE
 	//Rotate Texture?
 	CUSTOMVERTEX vertices[] ={
@@ -268,15 +272,62 @@ int InitD3D( HWND hwnd, unsigned long lWidth, unsigned long lHeight )
 		{lWidth*3/4,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,1.0f},
 		{0.0f,			lHeight*3/4,0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,1.0f}
 	};
-#else
-	CUSTOMVERTEX vertices[] ={
-		{0.0f,		0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,0.0f},
-		{lWidth,	0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,0.0f},
-		{lWidth,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,1.0f},
-		{0.0f,		lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,1.0f}
-	};
-#endif
 
+#else
+
+	int type = 1;
+	CUSTOMVERTEX vertices[4] = { 0 };
+	if (type == 1)
+	{
+		// 1.正常贴图
+		// 正常四个顶点进行贴图，顶点坐标四个顶点是顺时针旋转，纹理坐标u,v也是顺时针进行旋转
+		//    当纹理坐标左上角贴到顶点左上角
+		CUSTOMVERTEX tmp[] = {
+			// 左上
+			{0.0f,		0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,0.0f},
+			// 右上
+			{lWidth,	0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,0.0f},
+			// 右下
+			{lWidth,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,1.0f},
+			// 左下
+			{0.0f,		lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,1.0f}
+		};
+		memcpy(vertices, tmp, sizeof(CUSTOMVERTEX) * 4);
+	}
+	else if (type == 2)
+	{
+		// 2.纹理旋转贴图
+		// 右向旋转90度  纹理坐标顺时针移动一个点，即纹理坐上贴在顶点坐标右上，即可旋转
+		CUSTOMVERTEX tmp[] = {
+			// 左下
+			{0.0f,		0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,1.0f},
+			// 左上
+			{lWidth,	0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,0.0f},
+			// 右上
+			{lWidth,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,0.0f},
+			// 右下
+			{0.0f,		lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,1.0f}
+		};
+		memcpy(vertices, tmp, sizeof(CUSTOMVERTEX) * 4);
+	}
+	else if (type == 3)
+	{
+		// 3.纹理上下翻转
+		// 纹理u,v坐标，u乘-1即左右颠倒，v乘-1即上下颠倒
+		CUSTOMVERTEX tmp[] = {
+			// 左下
+			{0.0f,		0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,0.0f},
+			// 左上
+			{lWidth,	0.0f,		0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,0.0f},
+			// 右上
+			{lWidth,	lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),1.0f,-1.0f},
+			// 右下
+			{0.0f,		lHeight,	0.0f,	1.0f,D3DCOLOR_ARGB(255, 255, 255, 255),0.0f,-1.0f}
+		};
+		memcpy(vertices, tmp, sizeof(CUSTOMVERTEX) * 4);
+	}
+
+#endif
 
 	// Fill Vertex Buffer
 	CUSTOMVERTEX *pVertex;
@@ -338,7 +389,6 @@ bool Render()
 
 	lRet = m_pDirect3DDevice->SetTexture( 0, m_pDirect3DTexture );
 
-	
 	//Binds a vertex buffer to a device data stream.
 	m_pDirect3DDevice->SetStreamSource( 0, m_pDirect3DVertexBuffer,
 		0, sizeof(CUSTOMVERTEX) );
@@ -350,6 +400,8 @@ bool Render()
 	m_pDirect3DDevice->EndScene();
 	//Presents the contents of the next buffer in the sequence of back 
 	//buffers owned by the device.
+	// 双缓冲区全部进行交换，前台(即屏幕展示)与后台进行交换 add by dhx at 2023/10/18
+	// Present( src, dest, NULL, NULL ); 局部刷新
 	m_pDirect3DDevice->Present( NULL, NULL, NULL, NULL );
 	return true;
 }
@@ -393,7 +445,8 @@ int WINAPI WinMain( __in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, 
 	ShowWindow(hwnd, nShowCmd);
 	UpdateWindow(hwnd);
 
-	fp=fopen("../test_bgra_320x180.rgb","rb+");
+	// 使用带文字的视频更方便观察
+	fp=fopen("../test_320x180.rgb","rb+");
 
 	if(fp==NULL){
 		printf("Cannot open this file.\n");
